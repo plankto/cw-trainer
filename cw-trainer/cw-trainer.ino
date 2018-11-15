@@ -22,27 +22,30 @@
 
   Oct. 2016 - Modified to replace PS-2 keyboard functions with LCD menus and buttons
   by Mike Hughes, KC1DMR. Latest source at https://github.com/mfhughes128/cw-trainer
+
+  Nov. 2018 - Modified to support cheap 2x16 LCD Keypad Shield "ROBOT" etc
+  by Nigel Hill - VK1UP. https://github.com/plankto/cw-trainer/tree/master/cw-trainer
 *****************************************/
 
 #include <avr/pgmspace.h>
 #include <EEPROM.h>
 #include <Morse.h>
 #include <MorseEnDecoder.h>  // Morse EnDecoder Library
-#include <Adafruit_RGBLCDShield.h>
-#include <utility/Adafruit_MCP23017.h>
+#include <LiquidCrystal.h>
 
-// These #defines make it easy to set the LCD backlight color
-#define RED 0x1
-#define YELLOW 0x3
-#define GREEN 0x2
-#define TEAL 0x6
-#define BLUE 0x4
-#define VIOLET 0x5
-#define WHITE 0x7
-#define LCD_DISPLAYON 0x04
-#define LCD_DISPLAYOFF 0x00
+const int rs = 8, en = 9, d4 = 4, d5 = 5, d6 = 6, d7 = 7;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
 
-Adafruit_RGBLCDShield lcd = Adafruit_RGBLCDShield();  // LCD class
+#define btnRIGHT 0
+#define btnUP 1
+#define btnDOWN 2
+#define btnLEFT 3
+#define btnSELECT 4
+#define btnNONE 5
+#define btnUNKNOWN 6
+
+// Just for ease of displaying
+const char *button[7] ={"BUTTON_RIGHT", "BUTTON_UP", "BUTTON_DOWN", "BUTTON_LEFT", "BUTTON_SELECT", "BUTTON_NONE", "BUTTON_UNKNOWN"};
 char line_buf[17];
 
 // Application preferences global
@@ -106,7 +109,7 @@ void setup()
 
   // Start LCD
   lcd.begin(16, 2);
-  lcd.setBacklight(WHITE);
+//  lcd.setBacklight(WHITE);
 
   // Initialize application preferences
   prefs_init();
@@ -142,6 +145,21 @@ void loop()
 }  // end loop()
 
 
+int readkeypad(){
+      int adc_key_in = analogRead(0); //
+      int ret = btnUNKNOWN;
+
+      if (adc_key_in < 50) ret = btnRIGHT;
+      if ((adc_key_in > 500) && (adc_key_in < 1150)) ret = btnNONE;
+      if ( (adc_key_in > 90) && (adc_key_in < 150) ) ret = btnUP;
+      if ( (adc_key_in > 250) && (adc_key_in < 350) ) ret = btnDOWN;
+      if ( (adc_key_in > 400) && (adc_key_in < 450) ) ret = btnLEFT;
+      if ( (adc_key_in > 600) && (adc_key_in < 700) ) ret = btnSELECT;
+
+      //Serial.println(adc_key_in);
+      return ret;
+}
+
 //====================
 // Operating Mode Menu Function
 //====================
@@ -173,13 +191,17 @@ byte get_mode()
     lcd.print(line_buf);
     delay(250);  // short delay for readability
 
+    
+
     // wait for a button press then handle it.
-    while(!(buttons = lcd.readButtons()));  // wait for button press
-    if (buttons & BUTTON_UP) --entry;
-    if (buttons & BUTTON_DOWN) ++entry;
+    while((button[readkeypad()] == "BUTTON_NONE"));  // wait for button press
+    Serial.println(button[readkeypad()]);
+    
+    if (button[readkeypad()] == "BUTTON_UP") --entry;
+    if (button[readkeypad()] == "BUTTON_DOWN") ++entry;
     entry = constrain(entry, 1, n_entry);
-    if (buttons & BUTTON_SELECT) {
-      while(lcd.readButtons());  // wait for button release
+    if (button[readkeypad()] == "BUTTON_SELECT") {
+      while(button[readkeypad()] == "BUTTON_SELECT");  // wait for button release
       done = true; 
     }
   } while(!done);
@@ -230,24 +252,24 @@ void set_prefs()
       lcd.print(p_val);
       lcd.print("          ");
       delay(250);
-      while(!(buttons = lcd.readButtons()));
+      while((button[readkeypad()] == "BUTTON_NONE"));  // wait for button press
 
       // Handle button press in priority order
-      if (buttons & BUTTON_SELECT) {
+      if (button[readkeypad()] == "BUTTON_SELECT") {
         next = true;
         done = true;
-      } else if (buttons & BUTTON_UP) {
+      } else if (button[readkeypad()] == "BUTTON_UP") {
         tmp = --pref;
         pref = constrain(tmp, 1, NUM_PREFS-1);
         next = true;
-      } else if (buttons & BUTTON_DOWN) {
+      } else if (button[readkeypad()] == "BUTTON_DOWN") {
         tmp = ++pref;
         pref = constrain(tmp, 1, NUM_PREFS-1);
         next = true;
-      } else if (buttons & BUTTON_RIGHT) {
+      } else if (button[readkeypad()] == "BUTTON_RIGHT") {
         tmp = ++p_val;
         p_val = prefs_set(pref, tmp);
-      } else if (buttons & BUTTON_LEFT) {
+      } else if (button[readkeypad()] == "BUTTON_LEFT") {
         tmp = --p_val;
         p_val = prefs_set(pref, tmp);
       }
@@ -270,7 +292,7 @@ void set_prefs()
   }
   
   // wait for button release
-  while(lcd.readButtons());
+  while(!(button[readkeypad()] == "BUTTON_NONE"));
 
 }  // end set_prefs()
 
@@ -399,26 +421,26 @@ void morse_trainer()
           ++rx_cnt;
         }
       }
-      if (buttons = lcd.readButtons()) break;
+      if (!(button[readkeypad()] == "BUTTON_NONE")) break;
     } while (rx_cnt < prefs[GROUP_NUM] && !error);
 
     // Set backlignt according to trainee's performance
     if (error) {
-      lcd.setBacklight(RED);
+      //lcd.setBacklight(RED);
     } else {
-      lcd.setBacklight(WHITE);      
+      //lcd.setBacklight(WHITE);      
     }
 
     delay(100);  //0.1 sec pause at the end of the loop.
 
-  } while(!(buttons));
+  } while((button[readkeypad()] == "BUTTON_NONE"));
 
   //TODO Decode and handle buttons
   //    select = exit
   //    up/dn = chg code speed (sets error so same string repeats)
   //    left/right = chg group size
 
-  while(lcd.readButtons());  // wait for button release
+  while(!(button[readkeypad()] == "BUTTON_NONE"));  // wait for button release
 
 }  // end morse_trainer()
 
@@ -429,7 +451,7 @@ void morse_trainer()
 void morse_decode()
 {
   char cw_rx;
-  byte button;
+  byte buttons;
   byte ch_cnt = 0;
 
   morseDecoder morseInput = morseDecoder(morseInPin, MORSE_KEYER, MORSE_ACTIVE_LOW);
@@ -454,9 +476,10 @@ void morse_decode()
       lcd.print(cw_rx);  // Display the CW character
       ++ch_cnt;
     }
-  } while (!(button = lcd.readButtons()));
+    
+  } while((button[readkeypad()] == "BUTTON_NONE"));
 
-  while (lcd.readButtons());
+  while(!(button[readkeypad()] == "BUTTON_NONE"));
 }  // end of morse_decode()
 
 
@@ -498,7 +521,7 @@ void paris_test()
     // Send characters 
     for (int i = 0; i < 5; i++)
     {
-      if (lcd.readButtons()) done = true;  // if button down, this is last loop
+      if (button[readkeypad()] == "BUTTON_SELECT") done = true;  // if button down, this is last loop
       if (prefs[GROUP_DLY] > 0) {  //Wait out delay between characters
         delay(prefs[GROUP_DLY] * 10);
       }
@@ -508,7 +531,7 @@ void paris_test()
     }
   } while (!done);
 
-  while (lcd.readButtons());  //wait for button to be released
+  while (!(button[readkeypad()] == "BUTTON_NONE"));  //wait for button to be released
 }  // end of paris_test()
 
 
@@ -549,7 +572,7 @@ void prefs_init()
 //========================
 byte prefs_set(byte pref, int val)
 {
-  const byte lo_lim[] {0, 1, 0, 20, 1, 1, 0, 0};  // Table of lower limits of preference values
+  const byte lo_lim[] {0, 1, 0, 10, 1, 1, 0, 0};  // Table of lower limits of preference values
   const byte hi_lim[] {170, 15, 30, 30, 6, 40, 39, 1};  // Table of uppper limits of preference values
   byte new_val;
   byte indx;
@@ -597,4 +620,3 @@ byte prefs_set(byte pref, int val)
   prefs[indx] = new_val;
   return new_val;
 }
-
